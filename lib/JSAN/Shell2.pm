@@ -33,13 +33,13 @@ programmatic client interface.
 =cut
 
 use strict;
-use Term::ReadLine ();
 use Params::Util   '_IDENTIFIER';
+use Term::ReadLine ();
 use JSAN::Index;
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '2.00_01';
+	$VERSION = '2.00_02';
 }
 
 
@@ -125,6 +125,8 @@ sub execute {
 # General Commands
 
 sub command_quit {
+	my $self = shift;
+	$self->_show('K TNX BYE!!!');
 	exit(0);
 }
 
@@ -195,6 +197,42 @@ sub command_library {
 	$self->show_library( $library );
 }
 
+sub command_find {
+	my $self   = shift;
+	my %args   = @_;
+	my @params = @{$args{params}};
+	my $name   = $params[0];
+	my $search = "%$name%";
+
+	# Do the search
+	my @objects = ();
+	push @objects, JSAN::Index::Author->search_like(       login  => $search );
+	push @objects, JSAN::Index::Distribution->search_like( name   => $search );
+	push @objects, JSAN::Index::Release->search_like(      source => $search );
+	push @objects, JSAN::Index::Library->search_like(      name   => $search );
+
+	# Did we find anything?
+	unless ( @objects ) {
+		return $self->_show( "No objects found of any type like '$name'" );
+	}
+
+	# If we only found one thing, go directly to it
+	if ( @objects == 1 ) {
+		if ( $objects[0]->isa('JSAN::Index::Author') ) {
+			return $self->show_author( $objects[0] );
+		} elsif ( $objects[0]->isa('JSAN::Index::Distribution') ) {
+			return $self->show_dist( $objects[0] );
+		} elsif ( $objects[0]->isa('JSAN::Index::Release') ) {
+			return $self->show_release( $objects[0] );
+		} else {
+			return $self->show_library( $objects[0] );
+		}
+	}
+
+	# Show all of the objects
+	$self->show_list( @objects );
+}
+
 sub show_author {
 	my $self   = shift;
 	my $author = shift;
@@ -229,15 +267,34 @@ sub show_dist {
 	$self->_show(
 		"Distribution   = " . $dist->name,
 		"Latest Release = " . $release->source,
-		"    Version:  "    . $release->version,
-		"    Created:  "    . scalar(localtime($release->created)),
-		"    Author:   "    . $author->login,
+		"    Version: "     . $release->version,
+		"    Created: "     . $release->created_string,
+		"    Author:  "     . $author->login,
 		"        Name:    " . $author->name,
 		"        Email:   " . $author->email,
 		"        Website: " . $author->url,
 		map {
 			sprintf( $string, $_->name, $_->version )
 		} @libraries
+		);
+}
+
+sub show_release {
+	my $self    = shift;
+	my $release = shift;
+	my $dist    = $release->distribution;
+	my $author  = $release->author;
+
+	$self->_show(
+		"Release    = "      . $release->source,
+		"    Distribution:   " . $dist->name,
+		"    Version:        " . $release->version,
+		"    Created:        " . $release->created_string,
+		"    Latest Release: " . ($release->latest ? 'Yes' : 'No'),
+		"    Author:         " . $author->login,
+		"        Name:    " . $author->name,
+		"        Email:   " . $author->email,
+		"        Website: " . $author->url,
 		);
 }
 
@@ -267,9 +324,9 @@ sub show_library {
 		"    Version: " . $library->version,
 		"In Distribution  = " . $dist->name,
 		"Latest Release   = " . $release->source,
-		"    Version:  "      . $release->version,
-		"    Created:  "      . scalar(localtime($release->created)),
-		"    Author:   "      . $author->login,
+		"    Version: "       . $release->version,
+		"    Created: "       . scalar(localtime($release->created)),
+		"    Author:  "       . $author->login,
 		"        Name:    "   . $author->name,
 		"        Email:   "   . $author->email,
 		"        Website: "   . $author->url,
@@ -279,7 +336,49 @@ sub show_library {
 		);
 }
 
+sub show_list {
+	my $self = shift;
 
+	# Show each one
+	my @output = ();
+	foreach my $object ( @_ ) {
+		if ( $object->isa('JSAN::Index::Author') ) {
+			push @output, sprintf(
+				"  Author:        %-10s (\"%s\" <%s>)",
+				$object->login,
+				$object->name,
+				$object->email,
+				);
+
+		} elsif ( $object->isa('JSAN::Index::Distribution') ) {
+			push @output, sprintf(
+				"  Distribution:  %s",
+				$object->name,
+				);
+
+		} elsif ( $object->isa('JSAN::Index::Release') ) {
+			push @output, sprintf(
+				"  Release:       %s",
+				$object->source,
+				);
+
+		} elsif ( $object->isa('JSAN::Index::Library') ) {
+			push @output, sprintf(
+				"  Library:       %s",
+				$object->name,
+				);
+		}
+	}
+
+	# Summary
+	push @output, "  Found "
+		. scalar(@_)
+		. " matching objects in the index";
+
+	$self->_show( @output );
+}
+	
+	
 
 
 
@@ -302,6 +401,8 @@ my %COMMANDS_EN = (
 	'l'            => 'library',
 	'lib'          => 'library',
 	'library'      => 'library',
+	'f'            => 'find',
+	'find'         => 'find',
 	);
 sub resolve_command {
 	$COMMANDS_EN{$_[1]};

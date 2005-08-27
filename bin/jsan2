@@ -20,7 +20,7 @@ jsan2 - The JavaScript Archive Network (JSAN) Shell
 
   adam@red:~$ jsan2
   
-  jsan shell -- JSAN exploration and library installation (v2.00_01)
+  jsan shell -- JSAN exploration and library installation (v2.00_02)
              -- Copyright 2005 Adam Kennedy. All rights reserved.
              -- Type 'help' for a summary of available commands.
   
@@ -89,7 +89,25 @@ jsan2 - The JavaScript Archive Network (JSAN) Shell
       Library:  Test.More              0.20
       Library:  Test.Simple            0.20
   
+  jsan> find cwest
+  
+    Author:        cwest      ("Casey West" <casey@geeknest.com>)
+    Release:       /dist/c/cw/cwest/Digest.MD5-0.01.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.01.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.02.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.03.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.04.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.05.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.06.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.07.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.08.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.09.tar.gz
+    Release:       /dist/c/cw/cwest/JSAN-0.10.tar.gz
+    Found 12 matching objects in the index
+  
   jsan> exit
+  
+  K TNX BYE!!!
   
   adam@red:~$
 
