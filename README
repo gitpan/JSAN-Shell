@@ -1,0 +1,39 @@
+NAME
+    JSAN::Shell2 - JavaScript Archive Network (JSAN) Shell (2nd Generation)
+
+DESCRIPTION
+    "JSAN::Shell2" provides command handling and dispatch for the jsan2 user
+    application. It interprates these commands and provides the appropriate
+    instructions to the JSAN::Client and JSAN::Transport APIs.
+
+  Why Do Another Shell So Soon?
+    The JavaScript Archive Network, like its predecessor CPAN, is a large
+    system with quite a number of different parts.
+
+    In an effort to have a usable repository up, running and usable as
+    quickly as possible, some systems (such as the JSAN shell) were built
+    with the understanding that they would be replaced by lighter, more
+    scalable and more comprehensive (but much slower to write) replacements
+    once they had time to catch up.
+
+    "JSAN::Shell2" represents the rewrite of the end-user oriented shell
+    component, with JSAN::Client providing the seperate and more general
+    programmatic client interface.
+
+METHODS
+AUTHORS
+    Adam Kennedy <adam@ali.as>, <http://ali.as>
+
+    Guts stolen from JSAN::Shell by Casey West <casey@geeknest.com>
+
+SEE ALSO
+    jsan2, JSAN::Client, <http://openjsan.org>
+
+COPYRIGHT
+    Copyright 2005 Adam Kennedy. All rights reserved.
+
+    Parts copyright (c) 2005 Casey West. All rights reserved.
+
+    This module is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
