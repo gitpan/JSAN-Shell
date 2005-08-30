@@ -8,7 +8,7 @@ license        ( 'perl'                       );
 requires       ( 'perl'            => '5.005' );
 requires       ( 'Term::ReadLine'  => '1.01'  );
 requires       ( 'Getopt::Long'    => '2.34'  );
-requires       ( 'JSAN::Client'    => '0.08'  );
+requires       ( 'JSAN::Client'    => '0.10'  );
 build_requires ( 'File::Spec'      => '0.80'  );
 build_requires ( 'Test::More'      => '0.47'  );
 install_script ( 'bin/jsan2'                  );

@@ -33,13 +33,16 @@ programmatic client interface.
 =cut
 
 use strict;
-use Params::Util   '_IDENTIFIER';
-use Term::ReadLine ();
-use JSAN::Index;
+use Params::Util    '_IDENTIFIER',
+                    '_INSTANCE';
+use Term::ReadLine  ();
+use JSAN::Transport ();
+use JSAN::Index     ();
+use JSAN::Client    ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '2.00_02';
+	$VERSION = '2.00_03';
 }
 
 
@@ -53,15 +56,23 @@ sub new {
 	my $class  = ref $_[0] ? ref shift : shift;
 	my %params = @_;
 
+	# Find a terminal to use
+	my $term = _INSTANCE($params{term}, 'Term::Readline')    # Use an explicitly passed terminal...
+		|| $Term::ReadLine::Perl::term # ... or an existing terminal...
+		|| Term::ReadLine->new;        # ... or create a new one.
+
 	# Create the actual object
 	my $self = bless {
-		term   => $Term::ReadLine::Perl::term
-			|| Term::ReadLine->new,
 		prompt => 'jsan> ',
+		term   => $term,
+		client => undef,          # Create this later
+		config => {
+			prefix  => undef, # Where to install to
+			mirror  => undef, # JSAN remote mirror
+			verbose => '',    # Quiet or noisy
+			offline => '',    # Offline mode
+			},
 		}, $class;
-
-	# Initialize JSAN::Transport (with default values for now)
-	JSAN::Transport->init;
 
 	$self;
 }
@@ -70,6 +81,28 @@ sub term { $_[0]->{term} }
 
 sub prompt { $_[0]->{prompt} }
 
+# Get or create the JSAN::Client object for the shell
+sub client {
+	my $self = shift;
+	$self->{client} or
+	$self->{client} = JSAN::Client->new( %{$self->{config}} );
+}
+
+sub prefix {
+	$_[0]->{config}->{prefix};
+}
+
+sub mirror {
+	$_[0]->{config}->{mirror};
+}
+
+sub verbose {
+	$_[0]->{config}->{verbose};
+}
+
+sub offline {
+	$_[0]->{config}->{offline};
+}
 
 
 
@@ -233,6 +266,128 @@ sub command_find {
 	$self->show_list( @objects );
 }
 
+sub command_config {
+	shift()->show_config;
+}
+
+sub command_set {
+	my $self   = shift;
+	my %args   = @_;
+	my @params = @{$args{params}};
+	my $name   = shift(@params);
+	unless ( @params ) {
+		return $self->_show("Did not provide a value to set the option to");
+	}
+
+	# Handle the valid options
+	if ( _IDENTIFIER($name) ) {
+		return $self->command_set_verbose( @params ) if $name eq 'verbose';
+		return $self->command_set_offline( @params ) if $name eq 'offline';
+		return $self->command_set_mirror( @params )  if $name eq 'mirror';
+		return $self->command_set_prefix( @params )  if $name eq 'prefix';
+	}
+
+	$self->_show("Invalid or unknown configuration option '$params[0]'");
+}
+
+sub command_set_verbose {
+	my $self  = shift;
+	my $value = shift;
+	if ( $value =~ /^(?:y|yes|t|true|1|on)$/i ) {
+		$self->{config}->{verbose} = 1;
+		$self->_show("Verbose mode is enabled.");
+	} elsif ( $value =~ /^(?:n|no|f|false|0|off)$/i ) {
+		$self->{config}->{verbose} = '';
+		$self->_show("Verbose mode is disabled.");
+	} else {
+		$self->_show("Unknown verbose mode '$value'. Try 'on' or 'off'");
+	}
+}
+
+sub command_set_offline {
+	my $self  = shift;
+	my $value = shift;
+	if ( $value =~ /^(?:y|yes|t|true|1|on)$/i ) {
+		$self->{config}->{offline} = 1;
+		$self->_show("Offline mode is enabled.");
+	} elsif ( $value =~ /^(?:n|no|f|false|0|off)$/i ) {
+		$self->{config}->{offline} = '';
+		$self->_show("Offline mode is disabled.");
+	} else {
+		$self->_show("Unknown offline mode '$value'. Try 'on' or 'off'");
+	}
+}
+
+sub command_set_mirror {
+	my $self  = shift;
+	my $value = shift;
+
+	### FIXME - Once JSAN::URI works, add validation here
+
+	# Change the mirror and reset JSAN::Transport
+	$self->{config}->{mirror} = $value;
+
+
+	$self->_show("mirror changed to '$value'");
+}
+
+sub command_set_prefix {
+	my $self  = shift;
+
+	# Check the prefix directory
+	my $value = shift;
+	unless ( -d $value ) {
+		return $self->_show("The directory '$value' does not exist.");
+	}
+	unless ( -w $value ) {
+		return $self->_show("You do not have write permissions to '$value'.");
+	}
+
+	# Change the prefix and flush the client
+	$self->{config}->{prefix} = $value;
+	$self->{client} = undef;
+
+	$self->_show("prefix changed to '$value'");
+}
+
+sub command_pull {
+	my $self   = shift;
+	my %args   = @_;
+	my @params = @{$args{params}};
+	my $name   = shift(@params);
+
+	# Find the library they are refering to
+	my $library = JSAN::Index::Library->retrieve( name => $name );
+	unless ( $library ) {
+		return $self->_show("Could not find the library '$name'");
+	}
+
+	# Mirror the file to local disk
+	my $path = $library->release->mirror;
+	$self->_show("Library '$name' downloaded in release file '$path'");
+}
+
+sub command_install {
+	my $self   = shift;
+	my %args   = @_;
+	my @params = @{$args{params}};
+	my $name   = shift(@params);
+
+	# Find the library they are refering to
+	my $library = JSAN::Index::Library->retrieve( name => $name );
+	unless ( $library ) {
+		return $self->_show("Could not find the library '$name'");
+	}
+
+	# Do we have a prefix to install to
+	unless ( $self->prefix ) {
+		return $self->_show("No install prefix set. Try 'set prefix /install/path'");
+	}
+
+	# Get the client object and install the package (and it's dependencies)
+	$self->client->install_library($name);
+}
+
 sub show_author {
 	my $self   = shift;
 	my $author = shift;
@@ -325,7 +480,7 @@ sub show_library {
 		"In Distribution  = " . $dist->name,
 		"Latest Release   = " . $release->source,
 		"    Version: "       . $release->version,
-		"    Created: "       . scalar(localtime($release->created)),
+		"    Created: "       . $release->created_string,
 		"    Author:  "       . $author->login,
 		"        Name:    "   . $author->name,
 		"        Email:   "   . $author->email,
@@ -378,7 +533,19 @@ sub show_list {
 	$self->_show( @output );
 }
 	
-	
+sub show_config {
+	my $self   = shift;
+	$self->_show(
+		"    jsan configuration",
+		"    ------------------",
+		"    verbose: " . ($self->verbose ? 'enabled' : 'disabled'),
+		"    offline: " . ($self->offline ? 'enabled' : 'disabled'),
+		"    mirror:  " . ($self->mirror || '(none)'),
+		"    prefix:  " . ($self->prefix || '(none)'),
+		);
+}
+
+
 
 
 
@@ -386,12 +553,12 @@ sub show_list {
 # Localisation and Content
 
 # For a given string, find the command for it
-my %COMMANDS_EN = (
+my %COMMANDS = (
+	'q'            => 'quit',
 	'quit'         => 'quit',
 	'exit'         => 'quit',
-	'q'            => 'quit',
-	'help'         => 'help',
 	'h'            => 'help',
+	'help'         => 'help',
 	'?'            => 'help',
 	'a'            => 'author',
 	'author'       => 'author',
@@ -403,9 +570,19 @@ my %COMMANDS_EN = (
 	'library'      => 'library',
 	'f'            => 'find',
 	'find'         => 'find',
+	'c'            => 'config',
+	'conf'         => 'config',
+	'config'       => 'config',
+	's'            => 'set',
+	'set'          => 'set',
+	'p'            => 'pull',
+	'pull'         => 'pull',
+	'i'            => 'install',
+	'install'      => 'install',
 	);
+
 sub resolve_command {
-	$COMMANDS_EN{$_[1]};
+	$COMMANDS{$_[1]};
 }
 
 
@@ -415,7 +592,7 @@ sub help_usage { <<"END_HELP" }
 Usage: cpan [-OPTIONS [-MORE_OPTIONS]] [--] [PROGRAM_COMMAND ...]
 
 For more details run
-        perldoc -F /usr/bin/cpan
+        perldoc -F /usr/bin/jsan
 END_HELP
 
 
@@ -429,30 +606,30 @@ END_HELP
 
 
 sub help_commands { <<"END_HELP" }
-   ------------------------------------------------------------
- | Display Information                                          |
- | ------------------------------------------------------------ |
- | command     | argument      | description                    |
- | ------------------------------------------------------------ |
- | a,author    | WORD          | about an author                |
- | d,dist      | WORD          | about a distribution           |
- | l,library   | WORD          | about a library                |
- | f,find      | SUBSTRING     | all matches from above         |
- | ------------------------------------------------------------ |
- | Download, Test, Install...                                   |
- | ------------------------------------------------------------ |
- | get         |               | download                       |
- | install     | WORD          | install (implies get)          |
- | readme      | WORD          | display the README file        |
- | ------------------------------------------------------------ |
- | Other                                                        |
- | ------------------------------------------------------------ |
- | h,help,?    |               | display this menu              |
- | h,help,?    | COMMAND       | command details                |
- | conf get    | OPTION        | get a config option            |
- | conf set    | OPTION, VALUE | set a config option            |
- | quit,q,exit |               | quit the jsan shell            |
-   ------------------------------------------------------------
+     ------------------------------------------------------------
+   | Display Information                                          |
+   | ------------------------------------------------------------ |
+   | command     | argument      | description                    |
+   | ------------------------------------------------------------ |
+   | a,author    | WORD          | about an author                |
+   | d,dist      | WORD          | about a distribution           |
+   | l,library   | WORD          | about a library                |
+   | f,find      | SUBSTRING     | all matches from above         |
+   | ------------------------------------------------------------ |
+   | Download, Test, Install...                                   |
+   | ------------------------------------------------------------ |
+   | p,pull      | WORD          | download from the mirror       |
+   | i,install   | WORD          | install (implies get)          |
+   | r,readme    | WORD          | display the README file        |
+   | ------------------------------------------------------------ |
+   | Other                                                        |
+   | ------------------------------------------------------------ |
+   | h,help,?    |               | display this menu              |
+   | h,help,?    | COMMAND       | command details                |
+   | c,config    |               | show all config options        |
+   | s,set       | OPTION, VALUE | set a config option            |
+   | q,quit,exit |               | quit the jsan shell            |
+     ------------------------------------------------------------
 END_HELP
 
 

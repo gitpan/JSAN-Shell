@@ -1,4 +1,11 @@
 Revision history for Perl extension JSAN::Shell2
 
-0.01  Sat Aug 27 2005
+2.00_03  Tue Aug 30 2005
+	- Added the downloading and installation code
+	- Basic installation works now
+
+2.00_02  Sun Aug 28 2005
+	- Added most of the exploration code
+
+2.00_01  Sat Aug 27 2005
 	- original version
