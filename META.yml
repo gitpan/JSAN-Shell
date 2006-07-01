@@ -1,18 +1,20 @@
-name: JSAN-Shell
-version: 2.00_03
-abstract: The JavaScript Archive Network (JSAN) Shell 2
-author: Adam Kennedy <cpan@ali.as>
-license: perl
-distribution_type: module
-build_requires:
-  File::Spec: 0.80
-  Test::More: 0.47
-requires:
-  perl: 5.005
-  Term::ReadLine: 1.01
-  Getopt::Long: 2.34
-  JSAN::Client: 0.10
-no_index:
-  directory:
+
+no_index: 
+  directory: 
     - inc
-generated_by: Module::Install version 0.37
+    - t
+generated_by: Module::Install version 0.63
+distribution_type: module
+version: 2.00_04
+name: JSAN-Shell
+author: Adam Kennedy <F<adam@ali.as>>, L<http://ali.as>
+license: perl
+build_requires: 
+  Test::More: 0.47
+  File::Spec: 0.80
+requires: 
+  Getopt::Long: 2.34
+  perl: 5.6.0
+  Term::ReadLine: 1.01
+  JSAN::Client: 0.13
+abstract: JavaScript Archive Network Client Shell

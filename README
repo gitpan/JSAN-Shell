@@ -1,8 +1,8 @@
 NAME
-    JSAN::Shell2 - JavaScript Archive Network (JSAN) Shell (2nd Generation)
+    JSAN::Shell - JavaScript Archive Network Client Shell
 
 DESCRIPTION
-    "JSAN::Shell2" provides command handling and dispatch for the jsan2 user
+    "JSAN::Shell" provides command handling and dispatch for the jsan2 user
     application. It interprates these commands and provides the appropriate
     instructions to the JSAN::Client and JSAN::Transport APIs.
 
@@ -16,7 +16,7 @@ DESCRIPTION
     scalable and more comprehensive (but much slower to write) replacements
     once they had time to catch up.
 
-    "JSAN::Shell2" represents the rewrite of the end-user oriented shell
+    "JSAN::Shell" represents the rewrite of the end-user oriented shell
     component, with JSAN::Client providing the seperate and more general
     programmatic client interface.
 
