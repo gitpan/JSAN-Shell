@@ -6,7 +6,7 @@ DESCRIPTION
     application. It interprates these commands and provides the appropriate
     instructions to the JSAN::Client and JSAN::Transport APIs.
 
-  Why Do Another Shell So Soon?
+  Why Do A New Shell?
     The JavaScript Archive Network, like its predecessor CPAN, is a large
     system with quite a number of different parts.
 
