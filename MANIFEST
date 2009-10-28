@@ -1,8 +1,8 @@
-bin/jsan2
 Changes
 inc/Module/Install.pm
 inc/Module/Install/Base.pm
 inc/Module/Install/Can.pm
+inc/Module/Install/DSL.pm
 inc/Module/Install/Fetch.pm
 inc/Module/Install/Makefile.pm
 inc/Module/Install/Metadata.pm
@@ -16,7 +16,10 @@ Makefile.PL
 MANIFEST			This list of files
 META.yml
 README
-share/mirror.yml
+script/jsan2
+share/mirror.json
 t/01_compile.t
 t/02_basics.t
-t/99_author.t
+t/97_meta.t
+t/98_pod.t
+t/99_pmv.t

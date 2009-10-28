@@ -1,25 +1,40 @@
-abstract: JavaScript Archive Network Client Shell
-author: Adam Kennedy <F<adam@ali.as>>, L<http://ali.as>
-build_requires: 
-  ExtUtils::MakeMaker: 6.11
+---
+abstract: 'JavaScript Archive Network Client Shell'
+author:
+  - 'Adam Kennedy <adam@ali.as>'
+build_requires:
+  ExtUtils::MakeMaker: 6.42
   File::Spec: 0.80
   Test::More: 0.47
+  Test::Script: 1.05
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
 distribution_type: module
-generated_by: Module::Install version 0.64
+generated_by: 'Module::Install version 0.91'
 license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+module_name: JSAN::Shell
 name: JSAN-Shell
-no_index: 
-  directory: 
+no_index:
+  directory:
     - inc
+    - share
     - t
-requires: 
-  File::HomeDir: 0.63
-  File::ShareDir: 0.05
+requires:
+  File::HomeDir: 0.80
+  File::ShareDir: 1.00
+  File::UserConfig: 0.06
   Getopt::Long: 2.34
-  JSAN::Client: 0.16
-  LWP::Online: 0.02
-  Mirror::YAML: 0.02
+  JSAN::Client: 0.23
+  LWP::Online: 1.05
+  Mirror::JSON: 0.01
   Term::ReadLine: 1.01
   Term::ReadLine::Perl: 1.0302
-  perl: 5.005
-version: 2.00_05
+  perl: 5.6.0
+resources:
+  ChangeLog: http://fisheye2.atlassian.com/changelog/cpan/trunk/JSAN-Shell
+  license: http://dev.perl.org/licenses/
+  repository: http://svn.ali.as/cpan/trunk/JSAN-Shell
+version: 2.00_07

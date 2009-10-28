@@ -11,7 +11,7 @@ JSAN::Shell - JavaScript Archive Network Client Shell
 C<JSAN::Shell> provides command handling and dispatch for the L<jsan2>
 user application. It interprates these commands and provides the
 appropriate instructions to the L<JSAN::Client> and L<JSAN::Transport>
-APIs.
+APIs to download and install JSAN modules.
 
 =head2 Why Do A New Shell?
 
@@ -19,41 +19,39 @@ The JavaScript Archive Network, like its predecessor CPAN, is a large
 system with quite a number of different parts.
 
 In an effort to have a usable repository up, running and usable as
-quickly as possible, some systems (such as the JSAN shell) were built
-with the understanding that they would be replaced by lighter, more
-scalable and more comprehensive (but much slower to write) replacements
-once they had time to catch up.
+quickly as possible, some systems (such as the original JSAN shell)
+were built with the understanding that they would be replaced by lighter,
+more scalable and more comprehensive (but much slower to write)
+replacements eventually.
 
-C<JSAN::Shell> represents the rewrite of the end-user oriented shell
-component, with L<JSAN::Client> providing the seperate and more general
-programmatic client interface.
+C<JSAN::Shell> represents the rewrite of the end-user JSAN shell
+component, with L<JSAN::Client> providing the seperate and more
+general programmatic client interface.
 
 =head1 METHODS
 
 =cut
 
-use 5.005;
+use 5.006;
 use strict;
-use Params::Util    '_IDENTIFIER',
-                    '_INSTANCE';
-use Term::ReadLine  ();
-use File::HomeDir   ();
-use File::ShareDir  ();
-use Mirror::YAML    ();
-use LWP::Online     ();
-use JSAN::Transport ();
-use JSAN::Index     ();
-use JSAN::Client    ();
+use warnings;
+use Params::Util     qw{ _IDENTIFIER _INSTANCE };
+use Term::ReadLine   ();
+use File::HomeDir    ();
+use File::ShareDir   ();
+use File::UserConfig ();
+use Mirror::JSON     ();
+use LWP::Online      ();
+use JSAN::Index      ();
+use JSAN::Client     ();
 
-use vars qw{$VERSION};
-BEGIN {
-	$VERSION = '2.00_05';
-}
+our $VERSION = '2.00_07';
+    $VERSION = eval $VERSION;
 
-# Locate the starting mirror.yml
-use constant MIRROR_INIT => File::ShareDir::module_file(
-	'JSAN::Shell', 'mirror.yml',
-	);
+# Locate the starting mirror.json
+use constant MIRROR_INIT => File::ShareDir::dist_dir(
+	'JSAN-Shell'
+);
 
 
 
@@ -63,26 +61,22 @@ use constant MIRROR_INIT => File::ShareDir::module_file(
 # Constructor
 
 sub new {
-	my $class  = ref $_[0] ? ref shift : shift;
+	my $class  = shift;
 	my %params = @_;
 
 	# Find a terminal to use
 	my $term =  _INSTANCE($params{term}, 'Term::Readline') # Use an explicitly passed terminal...
 	         || $Term::ReadLine::Perl::term                # ... or an existing terminal...
-	         || Term::ReadLine->new;                       # ... or create a new one.
+	         || Term::ReadLine->new('JSAN Shell');         # ... or create a new one.
 
 	# Create the actual object
 	my $self = bless {
-		prompt => 'jsan> ',
-		term   => $term,
-		client => undef,          # Create this later
-		config => {
-			prefix  => undef, # Where to install to
-			mirror  => undef, # JSAN remote mirror
-			verbose => '',    # Quiet or noisy
-			offline => '',    # Offline mode
-			},
-		}, $class;
+		prompt    => 'jsan> ',
+		term      => $term,
+		client    => undef,          # Create this later
+		configdir => File::UserConfig->configdir,
+		config    => undef,
+	}, $class;
 
 	# Are we online?
 	unless ( $self->{config}->{offline} ) {
@@ -101,11 +95,20 @@ sub new {
 	# Locate the best mirror
 	unless ( $self->{config}->{mirror} ) {
 		$self->_print("Locating closest JSAN mirror...");
-		my $mirror_yaml = Mirror::YAML->read( MIRROR_INIT );
-		$mirror_yaml->check_master;
-		my @mirrors = $mirror_yaml->select_mirrors;
+		my $mirror_yaml = Mirror::JSON->read( MIRROR_INIT );
+		my @mirrors = $mirror_yaml->mirrors;
 		my $mirror  = $mirrors[ int rand scalar @mirrors ];
 		$self->{config}->{mirror} = $mirror;
+	}
+
+	# Initialize the Index layer
+	if (JSAN::Index->self && $self->{config}->{mirror}) {
+	    Carp::croak("Cannot re-initialize JSAN::Index with different mirror url");
+	} elsif (not JSAN::Index->self) {
+        JSAN::Index->init(
+            verbose       => $self->{config}->{verbose},
+            mirror_remote => $self->{config}->{mirror},
+        );
 	}
 
 	$self;
@@ -135,7 +138,13 @@ sub mirror {
 }
 
 sub verbose {
-	$_[0]->{config}->{verbose};
+    my $self = shift;
+    my $config = $self->{config};
+    
+	return $config->{verbose} unless @_;
+	
+	$config->{verbose} = shift;
+	$self->client->verbose($config->{verbose});
 }
 
 sub offline {
@@ -150,9 +159,10 @@ sub offline {
 # JSAN::Shell Main Methods
 
 sub run {
+	local $| = 1;
 	my $self = shift;
 	$self->execute('help motd');
-	while (defined(my $cmd_line = $self->term->readline($self->prompt))) {
+	while ( defined(my $cmd_line = $self->term->readline($self->prompt)) ) {
 		$cmd_line = $self->_clean($cmd_line);
 		next unless length($cmd_line);
 		eval { $self->execute($cmd_line) };
@@ -166,16 +176,19 @@ sub run {
 
 # Execute a single command
 sub execute {
-	my ($self, $line) = @_;
+	my $self    = shift;
+	my $line    = shift;
 	my %options = (
 		force  => 0,
-		);
+	);
 
 	# Split and find the command
-	my @words = split / /, $line;
+	my @words = split /[ ]/, $line;
 	my $word  = shift(@words);
-	my $cmd   = $self->resolve_command($word)
-		or return $self->_show("Unknown command '$word'. Type 'help' for a list of commands");
+	my $cmd   = $self->resolve_command($word);
+	unless ( $cmd ) {
+		return $self->_show("Unknown command '$word'. Type 'help' for a list of commands");
+	}
 
 	# Is the command implemented
 	my $method = "command_$cmd";
@@ -222,6 +235,22 @@ sub command_help {
 #####################################################################
 # Investigation
 
+sub help_a      { shift->help_author }
+sub help_author { <<'END_HELP'       }
+  jsan> author adamk
+  
+  Author ID = adamk
+      Name:    Adam Kennedy
+      Email:   jsan@ali.as
+      Website: http://ali.as/
+
+The "author" command is used to to locate an author and information
+about them. 
+
+It takes a single argument which should be the full JSAN identifier
+for the author.
+END_HELP
+
 sub command_author {
 	my $self   = shift;
 	my %args   = @_;
@@ -238,6 +267,42 @@ sub command_author {
 	$self->show_author( $author );
 }
 
+sub help_d    { shift->help_dist }
+sub help_dist { <<'END_HELP'     }
+  jsan> dist JSAN
+  
+  Distribution   = JSAN
+  Latest Release = /dist/c/cw/cwest/JSAN-0.10.tar.gz
+      Version:  0.10
+      Created:  Tue Jul 26 17:26:35 2005
+      Author:   cwest
+          Name:    Casey West
+          Email:   casey@geeknest.com
+          Website:
+      Library:  JSAN  0.10
+  
+  The "dist" command is used to fetch information about a Distribution,
+  including the current release package, the author, and what Libraries
+  are contained in it.
+  
+  The dist command takes a single argument which should be the full name
+  of the distribution.
+  
+  In the JSAN, a Distribution represents an overall product/release-series.
+  Each distribution will have one or more Release package, which are the
+  actual archive files in the repository, and each distribution contains
+  one more more Library, which are the actual classes and APIs.
+  
+  For various reasons, it is occasionally necesary for a Library to move
+  from one Distribution to another. For this reason, most of the time
+  operations (such as installation) are done at the Library level, and the
+  JSAN client will automatically determine which Distribution (and thus
+  which Release package) to install.
+  
+  However, for cases when you do need information about the actual
+  Distribution, this command is made available.
+END_HELP
+
 sub command_dist {
 	my $self   = shift;
 	my %args   = @_;
@@ -252,6 +317,45 @@ sub command_dist {
 
 	$self->show_dist( $dist );
 }
+
+sub help_l       { shift->help_library(@_) }
+sub help_library { <<'END_HELP'            }
+  jsan> library Test.Simple
+  
+  Library          = Test.Simple
+      Version: 0.20
+  In Distribution  = Test.Simple
+  Latest Release   = /dist/t/th/theory/Test.Simple-0.20.tar.gz
+      Version:  0.20
+      Created:  Thu Aug 18 04:09:19 2005
+      Author:   theory
+          Name:    David Wheeler
+          Email:   david@justatheory.com
+          Website: http://www.justatheory.com/
+      Library:  Test.Builder           0.20
+      Library:  Test.Harness           0.20
+      Library:  Test.Harness.Browser   0.20
+      Library:  Test.Harness.Director  0.20
+      Library:  Test.More              0.20
+      Library:  Test.Simple            0.20
+
+  The "library" command is used to fetch information about a Library,
+  including the distribution that contains it, the current release, and
+  any other libraries that will be installed at the same time as the one
+  you are searching for.
+  
+  The library command takes a single argument which should be the full name
+  of the library/class.
+  
+  In the JSAN, a Library represents a single JavaScript prototype/class,
+  and most actions are Library-oriented.
+  
+  For various reasons, it is occasionally necesary for a Library to move
+  from one Distribution to another. For this reason, most of the time
+  operations (such as installation) are done at the Library level, and the
+  JSAN client will automatically determine which Distribution (and thus
+  which Release package) to install.
+END_HELP
 
 sub command_library {
 	my $self   = shift;
@@ -268,6 +372,27 @@ sub command_library {
 	$self->show_library( $library );
 }
 
+sub help_f    { shift->help_find(@_) }
+sub help_find { <<'END_HELP'         }
+jsan> f Display.Hide
+
+  Library:      Display.Hide
+  Distribution: Display.Hide
+  Release:      /dist/r/ro/rooneg/Display.Hide-0.02.tar.gz
+  Release:      /dist/r/ro/rooneg/Display.Hide-0.01.tar.gz
+
+  Found 4 matching objects in the index
+
+  The "find" command is an aggregate of the four other search commands
+  ("author", "dist", and "library").
+  
+  If a single index entry is found, the details of the result will be listed
+  in complete detail as per each specific search.
+  
+  If multiple index entries are found, a summary line of all the index
+  entries will be listed.
+END_HELP
+
 sub command_find {
 	my $self   = shift;
 	my %args   = @_;
@@ -277,10 +402,18 @@ sub command_find {
 
 	# Do the search
 	my @objects = ();
-	push @objects, sort JSAN::Index::Author->search_like(       login  => $search );
-	push @objects, sort JSAN::Index::Library->search_like(      name   => $search );
-	push @objects, sort JSAN::Index::Distribution->search_like( name   => $search );
-	push @objects, sort JSAN::Index::Release->search_like(      source => $search );
+	push @objects, sort JSAN::Index::Author->search_like(
+		login => $search,
+	);
+	push @objects, sort JSAN::Index::Library->search_like(
+		name => $search,
+	);
+	push @objects, sort JSAN::Index::Distribution->search_like(
+		name => $search,
+	);
+	push @objects, sort JSAN::Index::Release->search_like(
+		source => $search,
+	);
 
 	# Did we find anything?
 	unless ( @objects ) {
@@ -304,9 +437,37 @@ sub command_find {
 	$self->show_list( @objects );
 }
 
+sub help_c      { shift->help_config(@_) }
+sub help_config { <<'END_HELP'           }
+jsan> config
+
+    jsan configuration
+    ------------------
+    verbose: disabled
+    offline: disabled
+    mirror:  http://master.openjsan.org
+    prefix:  (none)
+
+  The "config" command lists the current configuration settings for the
+  client session.
+END_HELP
+
 sub command_config {
 	shift()->show_config;
 }
+
+sub help_s   { shift->help_config(@_) }
+sub help_set { <<'END_HELP'           }
+jsan> set verbose 1
+
+Verbose mode is enabled.
+
+  The "set" command is used to change the current configuration. It takes
+  the name of a configuration setting, and a value.
+  
+  Changes to configuration currently only apply for the duration of the
+  current session (this will be corrected in future).
+END_HELP
 
 sub command_set {
 	my $self   = shift;
@@ -332,10 +493,10 @@ sub command_set_verbose {
 	my $self  = shift;
 	my $value = shift;
 	if ( $value =~ /^(?:y|yes|t|true|1|on)$/i ) {
-		$self->{config}->{verbose} = 1;
+		$self->verbose(1);
 		$self->_show("Verbose mode is enabled.");
 	} elsif ( $value =~ /^(?:n|no|f|false|0|off)$/i ) {
-		$self->{config}->{verbose} = '';
+		$self->verbose('');
 		$self->_show("Verbose mode is disabled.");
 	} else {
 		$self->_show("Unknown verbose mode '$value'. Try 'on' or 'off'");
@@ -365,7 +526,6 @@ sub command_set_mirror {
 	# Change the mirror and reset JSAN::Transport
 	$self->{config}->{mirror} = $value;
 
-
 	$self->_show("mirror changed to '$value'");
 }
 
@@ -387,6 +547,11 @@ sub command_set_prefix {
 
 	$self->_show("prefix changed to '$value'");
 }
+
+sub help_p    { shift->help_pull(@_) }
+sub help_pull { <<'END_HELP'         }
+
+END_HELP
 
 sub command_pull {
 	my $self   = shift;
@@ -434,7 +599,7 @@ sub show_author {
 		"    Name:    " . $author->name,
 		"    Email:   " . $author->email,
 		"    Website: " . $author->url,
-		);
+	);
 }
 
 sub show_dist {
@@ -469,7 +634,7 @@ sub show_dist {
 		map {
 			sprintf( $string, $_->name, $_->version )
 		} @libraries
-		);
+	);
 }
 
 sub show_release {
@@ -488,7 +653,7 @@ sub show_release {
 		"        Name:    " . $author->name,
 		"        Email:   " . $author->email,
 		"        Website: " . $author->url,
-		);
+	);
 }
 
 sub show_library {
@@ -500,9 +665,11 @@ sub show_library {
 
 	# Get the list of libraries in this release.
 	# This only works because we are using the latest release.
-	my @libraries =
-		sort { $a->name cmp $b->name }
-		JSAN::Index::Library->search( release => $release->id );
+	my @libraries = sort {
+		$a->name cmp $b->name
+	} JSAN::Index::Library->search(
+		release => $release->id,
+	);
 
 	# Find the max library name length and create the formatting string
 	my $max = 0;
@@ -526,7 +693,7 @@ sub show_library {
 		map {
 			sprintf( $string, $_->name, $_->version )
 		} @libraries,
-		);
+	);
 }
 
 sub show_list {
@@ -541,25 +708,25 @@ sub show_list {
 				$object->login,
 				$object->name,
 				$object->email,
-				);
+			);
 
 		} elsif ( $object->isa('JSAN::Index::Distribution') ) {
 			push @output, sprintf(
 				"  Distribution: %s",
 				$object->name,
-				);
+			);
 
 		} elsif ( $object->isa('JSAN::Index::Release') ) {
 			push @output, sprintf(
 				"  Release:      %s",
 				$object->source,
-				);
+			);
 
 		} elsif ( $object->isa('JSAN::Index::Library') ) {
 			push @output, sprintf(
 				"  Library:      %s",
 				$object->name,
-				);
+			);
 		}
 	}
 
@@ -581,7 +748,7 @@ sub show_config {
 		"    offline: " . ($self->offline ? 'enabled' : 'disabled'),
 		"    mirror:  " . ($self->mirror || '(none)'),
 		"    prefix:  " . ($self->prefix || '(none)'),
-		);
+	);
 }
 
 
@@ -618,11 +785,14 @@ my %COMMANDS = (
 	'pull'         => 'pull',
 	'i'            => 'install',
 	'install'      => 'install',
+	'r'            => 'readme',
+	'readme'       => 'readme',
 	);
 
 sub resolve_command {
 	$COMMANDS{$_[1]};
 }
+
 
 
 
@@ -636,11 +806,15 @@ END_HELP
 
 
 
+
+
 sub help_motd { <<"END_HELP" }
-jsan shell -- JSAN exploration and library installation (v$VERSION)
-           -- Copyright 2005 Adam Kennedy. All rights reserved.
+jsan shell -- JSAN repository explorer and package installer (v$VERSION)
+           -- Copyright 2005 - 2009 Adam Kennedy.
            -- Type 'help' for a summary of available commands.
 END_HELP
+
+
 
 
 
@@ -710,9 +884,7 @@ sub _show {
 
 =head1 AUTHORS
 
-Adam Kennedy <F<adam@ali.as>>, L<http://ali.as>
-
-Guts stolen from JSAN::Shell by Casey West <F<casey@geeknest.com>>
+Adam Kennedy E<lt>adam@ali.asE<gt>
 
 =head1 SEE ALSO
 
@@ -720,10 +892,8 @@ L<jsan2>, L<JSAN::Client>, L<http://openjsan.org>
 
 =head1 COPYRIGHT
 
-Copyright 2005 Adam Kennedy.  All rights reserved.
- 
-Parts copyright (c) 2005 Casey West.  All rights reserved.
-  
+Copyright 2005 - 2009 Adam Kennedy.
+
 This module is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
