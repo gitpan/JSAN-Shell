@@ -37,4 +37,4 @@ resources:
   ChangeLog: http://fisheye2.atlassian.com/changelog/cpan/trunk/JSAN-Shell
   license: http://dev.perl.org/licenses/
   repository: http://svn.ali.as/cpan/trunk/JSAN-Shell
-version: 2.00_07
+version: 2.01
