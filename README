@@ -22,6 +22,13 @@ DESCRIPTION
     programmatic client interface.
 
 METHODS
+SUPPORT
+    Bugs should be reported via the CPAN bug tracker at
+
+    <http://rt.cpan.org/NoAuth/ReportBug.html?Queue=JSAN-Shell>
+
+    For other issues, contact the author.
+
 AUTHORS
     Adam Kennedy <adam@ali.as>
 
@@ -29,7 +36,7 @@ SEE ALSO
     jsan, JSAN::Client, <http://openjsan.org>
 
 COPYRIGHT
-    Copyright 2005 - 2009 Adam Kennedy.
+    Copyright 2005 - 2010 Adam Kennedy.
 
     This module is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.

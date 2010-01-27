@@ -37,6 +37,8 @@ use strict;
 use warnings;
 use Params::Util     qw{ _IDENTIFIER _INSTANCE };
 use Term::ReadLine   ();
+use File::Spec       ();
+use File::Path       ();
 use File::HomeDir    ();
 use File::ShareDir   ();
 use File::UserConfig ();
@@ -44,8 +46,9 @@ use Mirror::JSON     ();
 use LWP::Online      ();
 use JSAN::Index      ();
 use JSAN::Client     ();
+use JSON             ();
 
-our $VERSION = '2.01';
+our $VERSION = '2.02';
     $VERSION = eval $VERSION;
 
 # Locate the starting mirror.json
@@ -74,9 +77,13 @@ sub new {
 		prompt    => 'jsan> ',
 		term      => $term,
 		client    => undef,          # Create this later
-		configdir => File::UserConfig->configdir,
+		configdir => $params{configdir} || File::UserConfig->configdir,
 		config    => undef,
 	}, $class;
+	
+	
+	$self->{config} = $self->read_config();
+	
 
 	# Are we online?
 	unless ( $self->{config}->{offline} ) {
@@ -114,6 +121,77 @@ sub new {
 	$self;
 }
 
+sub config_file {
+    File::Spec->catfile($_[0]->{configdir}, 'config.json')
+}
+
+
+sub read_config {
+    my $self = shift;
+    
+    my $filename = $self->config_file;
+    
+    return {} unless -e $filename;
+    
+    my $config_content;
+    
+    #slurping
+    {
+        local($/);
+        open(my $fh, $filename) or Carp::croak("Cannot open config file: $filename");
+        $config_content = <$fh>;
+        close $fh;
+    }
+    
+    return JSON->new->relaxed->decode($config_content);
+} 
+
+
+sub write_config {
+    my ($self, $config)        = @_;
+    
+    my $filename = $self->config_file;
+    
+    my ($vol, $dir, $file) = File::Spec->splitpath($filename);
+    
+    my $directory = File::Spec::Unix->catpath($vol, $dir, '');
+    
+    
+    if (-d $directory) {
+        unless (-w $directory) {
+            Carp::croak("No permissions to write to config file directory '$directory'");
+        }
+    } else {
+        File::Path::mkpath($directory, 0, 0755) or die "Couldn't create config file directory '$directory'";
+    }
+    
+
+    # Save it
+    unless ( open( CONFIG, '>', $filename ) ) {
+        Carp::croak( "Failed to open '$filename' for writing: $!" );
+    }
+    unless ( print CONFIG JSON->new->pretty(1)->encode($config) ) {
+        Carp::croak( "Failed to write to '$filename'" );
+    }
+    unless ( close CONFIG ) {
+        Carp::croak( "Failed to close '$filename' after writing" );
+    }
+    
+    return 1;
+}
+
+
+sub remember_config_option {
+    my ($self, $option, $value) = @_;
+    
+    my $current_config = $self->read_config();
+    
+    $current_config->{ $option } = $value;
+    
+    $self->write_config($current_config);
+}
+
+
 sub term {
 	$_[0]->{term};
 }
@@ -129,9 +207,19 @@ sub client {
 	$self->{client} = JSAN::Client->new( %{$self->{config}} );
 }
 
+
 sub prefix {
-	$_[0]->{config}->{prefix};
+    my ($self, $value) = @_;
+	
+	return $self->{config}->{prefix} unless defined $value;
+	
+    # Change the prefix and flush the client
+	$self->{config}->{prefix} = $value;
+	$self->{client} = undef;
+	
+	return $value;
 }
+
 
 sub mirror {
 	$_[0]->{config}->{mirror};
@@ -531,9 +619,10 @@ sub command_set_mirror {
 
 sub command_set_prefix {
 	my $self  = shift;
+    my $value = (glob shift)[0];
 
 	# Check the prefix directory
-	my $value = glob shift;
+	
 	unless ( -d $value ) {
 		return $self->_show("The directory '$value' does not exist.");
 	}
@@ -541,11 +630,18 @@ sub command_set_prefix {
 		return $self->_show("You do not have write permissions to '$value'.");
 	}
 
-	# Change the prefix and flush the client
-	$self->{config}->{prefix} = $value;
-	$self->{client} = undef;
+	# Change the prefix
+	$self->prefix($value);
 
 	$self->_show("prefix changed to '$value'");
+	
+	my $remember = $self->term->readline("Remember this setting? [Y/n]");
+	
+	if (!$remember || $remember =~ /^y(es)?/i) {
+	    $self->remember_config_option('prefix', $value);
+	    
+	    $self->_show("prefix saved to configuration file: " . $self->config_file);
+	}
 }
 
 sub help_p    { shift->help_pull(@_) }
@@ -882,6 +978,14 @@ sub _show {
 
 =pod
 
+=head1 SUPPORT
+
+Bugs should be reported via the CPAN bug tracker at
+
+L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=JSAN-Shell>
+
+For other issues, contact the author.
+
 =head1 AUTHORS
 
 Adam Kennedy E<lt>adam@ali.asE<gt>
@@ -892,7 +996,7 @@ L<jsan>, L<JSAN::Client>, L<http://openjsan.org>
 
 =head1 COPYRIGHT
 
-Copyright 2005 - 2009 Adam Kennedy.
+Copyright 2005 - 2010 Adam Kennedy.
 
 This module is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
