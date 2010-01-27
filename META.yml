@@ -27,7 +27,7 @@ requires:
   File::ShareDir: 1.00
   File::UserConfig: 0.06
   Getopt::Long: 2.34
-  JSAN::Client: 0.23
+  JSAN::Client: 0.26
   LWP::Online: 1.05
   Mirror::JSON: 0.01
   Term::ReadLine: 1.01
@@ -37,4 +37,4 @@ resources:
   ChangeLog: http://fisheye2.atlassian.com/changelog/cpan/trunk/JSAN-Shell
   license: http://dev.perl.org/licenses/
   repository: http://svn.ali.as/cpan/trunk/JSAN-Shell
-version: 2.02
+version: 2.03
