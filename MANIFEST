@@ -21,6 +21,6 @@ share/mirror.json
 t/01_compile.t
 t/02_basics.t
 t/03_config_file.t
-t/97_meta.t
-t/98_pod.t
-t/99_pmv.t
+xt/meta.t
+xt/pmv.t
+xt/pod.t
